@@ -3,9 +3,11 @@ const fs = require('fs')
 
 const imagePaths = [];
 let outputImage = `${new Date().toISOString()}.png`;
+let processMode = 'PIXEL';
 
-var jimps = [];
+const jimps = [];
 const bestSourceImage = {};
+let charsPerPixel = 4; // 3 for RGB, 4 for RGBA
 
 const processCliArgs = (args) => {
   for (let i = 0; i < args.length; i++) {
@@ -35,7 +37,7 @@ const processCliArgs = (args) => {
             try {
               if (fs.existsSync(args[i + 1])) {
                 console.error(`processCliArgs: File: '${args[i + 1]}' already exists. Will overwrite.`);
-                continue;
+                // continue;
               }
               outputImage = args[i + 1];
             } catch (err) {
@@ -45,6 +47,47 @@ const processCliArgs = (args) => {
             }
             break;
           }
+
+          case '-m':
+          case '--mode':
+            {
+              try {
+                if (args[i + 1] === 'CHANNEL') {
+                  processMode = args[i + 1];
+                  continue;
+                }
+                if (args[i + 1] === 'PIXEL') {
+                  processMode = args[i + 1];
+                  continue;
+                }
+                console.error(`processCliArgs: Error on mode: Unknown Mode '${args[i + 1]}'`);
+              } catch (err) {
+                console.error('processCliArgs: Error on mode:');
+                console.error(err);
+                process.exit(2);
+              }
+              break;
+            }
+
+            case '-cppx':
+            case '--chars-per-pixel':
+              {
+                try {
+                  const charsPerPixelString = args[i + 1];
+                  const charsPerPixelIn = Number.parseInt(charsPerPixelString);
+                  if (Number.isNaN(charsPerPixelIn)) {
+                    console.error(`processCliArgs: Error on mode: Unknown Mode '${args[i + 1]}'`);
+                    continue;
+                  }
+                  
+                  charsPerPixel = charsPerPixelIn;
+                } catch (err) {
+                  console.error('processCliArgs: Error on chars per pixel:');
+                  console.error(err);
+                  process.exit(2);
+                }
+                break;
+              }
     
     }
   }
@@ -98,31 +141,55 @@ const main = () => {
   
   Promise.all(jimps).then((data) => {
     new jimp(data[0].bitmap.width, data[0].bitmap.height, (err, newImage) => {
-      for (let i = 0; i < newImage.bitmap.data.length; i++) {
-        const pixelList = data.map((image) => {
-          return image.bitmap.data[i];
-        });
-        const pixelAverage = getAverage(pixelList);
-        const closest = getClosest(pixelAverage, JSON.parse(JSON.stringify(pixelList)));
-        const fromImage = pixelList.indexOf(closest);
+      for (let i = 0; i < newImage.bitmap.data.length; i += charsPerPixel) {
+        const localBestSource = {};
 
-        pixelList.findIndex((value, index) => {
-          if (value === closest) {
-            if (!bestSourceImage[index]) {
-              bestSourceImage[index] = 0;
+        for (let rgba = 0; rgba < charsPerPixel; rgba++) {
+          const pixelList = data.map((image) => {
+            return image.bitmap.data[i + rgba];
+          });
+          const pixelAverage = getAverage(pixelList);
+          const closest = getClosest(pixelAverage, JSON.parse(JSON.stringify(pixelList)));
+          const fromImage = pixelList.indexOf(closest);
+  
+          pixelList.findIndex((value, index) => {
+            if (value === closest) {
+              if (!bestSourceImage[imagePaths[index]]) {
+                bestSourceImage[imagePaths[index]] = 0;
+              }
+              bestSourceImage[imagePaths[index]]++;
+
+              if (!localBestSource[index]) {
+                localBestSource[index] = 0;
+              }
+              localBestSource[index]++;
+
             }
-            bestSourceImage[index]++;
-          }
-        });
+          });
 
-        newImage.bitmap.data[i] = closest;
+          // Update each color channel individually
+          if (processMode === 'CHANNEL') {
+            newImage.bitmap.data[i + rgba] = closest;
+          }
+        }
+
+        // Select best fitting/matching pixel from all images.
+        if (processMode === 'PIXEL') {
+          const bestLocalIndex = getHighest(localBestSource);
+
+          for (let rgba = 0; rgba < charsPerPixel; rgba++) {
+            newImage.bitmap.data[i + rgba] = data[bestLocalIndex].bitmap.data[i + rgba];
+          }
+        }
       }
     
       newImage.write(outputImage, () => {
         console.log(`Width: ${newImage.bitmap.width}`);
         console.log(`Height: ${newImage.bitmap.height}`);
-        console.log(`Pixels: ${newImage.bitmap.data.length / 3}`);
-        console.log('Best source Image: ', bestSourceImage);
+        console.log(`Pixels: ${newImage.bitmap.data.length / charsPerPixel}`);
+        console.log(`Chars per Pixel: ${charsPerPixel}`);
+        console.log('Best Source Image: ', getHighest(bestSourceImage));
+        console.log('Source Image Scores: ', bestSourceImage);
         console.log(`Image written to disk: ${outputImage}`);
       });
     });
@@ -133,5 +200,6 @@ const main = () => {
 };
 
 processCliArgs(process.argv);
+console.log(`Processing Mode: ${processMode}`);
 console.log(`Processing Images: ${imagePaths}`);
 main();

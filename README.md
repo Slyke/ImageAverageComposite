@@ -22,7 +22,9 @@ npm start -- list of images
 
 ### Params:
 * `-ii` | `--input-image`: Add image path list
-* `-oi` | `--output-image`: Specify output image filename (optional)
+* `-oi` | `--output-image` (optional): Specify output image filename
+* `-m` | `--mode` = ('`PIXEL`' || '`CHANNEL`') (optional): Process mode. Get best value for each color channel in each image, or get the best fitting pixel from all images.
+* `-cppx` | `--chars-per-pixel` = (Int) (optional): How many chars in each pixel? 4 for RGBA, 3 for RGB.
 
 ### Example:
 ```
